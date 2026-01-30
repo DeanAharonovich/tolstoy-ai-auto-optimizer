@@ -3,7 +3,9 @@ import {
   tests, variants, analytics,
   type Test, type Variant, type AnalyticsPoint, type CreateTestRequest, type TestWithVariants
 } from "@shared/schema";
-import { eq, and, asc, sql } from "drizzle-orm";
+import { eq, and, asc, gte, sql } from "drizzle-orm";
+
+export type TimeRange = '1h' | '1d' | '1w' | '1m';
 
 export interface IStorage {
   // Tests
@@ -13,7 +15,7 @@ export interface IStorage {
   updateTestWinner(testId: number, winnerVariantId: number): Promise<Test | undefined>;
   
   // Analytics
-  getAnalytics(testId: number): Promise<AnalyticsPoint[]>;
+  getAnalytics(testId: number, timeRange?: TimeRange): Promise<AnalyticsPoint[]>;
   createAnalyticsBatch(points: Omit<AnalyticsPoint, "id">[]): Promise<void>;
 }
 
@@ -61,11 +63,70 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async getAnalytics(testId: number): Promise<AnalyticsPoint[]> {
-    return await db.select()
+  async getAnalytics(testId: number, timeRange?: TimeRange): Promise<AnalyticsPoint[]> {
+    // Calculate the start date based on time range
+    const now = new Date();
+    let startDate: Date;
+    let granularityMinutes: number;
+    
+    switch (timeRange) {
+      case '1h':
+        startDate = new Date(now.getTime() - 60 * 60 * 1000);
+        granularityMinutes = 15; // 15 minute intervals
+        break;
+      case '1d':
+        startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        granularityMinutes = 120; // 2 hour intervals
+        break;
+      case '1w':
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        granularityMinutes = 24 * 60; // 1 day intervals
+        break;
+      case '1m':
+      default:
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        granularityMinutes = 7 * 24 * 60; // 1 week intervals
+        break;
+    }
+    
+    // Fetch all data points in the time range
+    const allPoints = await db.select()
       .from(analytics)
-      .where(eq(analytics.testId, testId))
+      .where(and(
+        eq(analytics.testId, testId),
+        gte(analytics.timestamp, startDate)
+      ))
       .orderBy(asc(analytics.timestamp));
+    
+    if (allPoints.length === 0) return [];
+    
+    // Group points by variant and time bucket, taking the last value in each bucket
+    const bucketMs = granularityMinutes * 60 * 1000;
+    const groupedByVariant = new Map<number, Map<number, AnalyticsPoint>>();
+    
+    for (const point of allPoints) {
+      const bucketStart = Math.floor(new Date(point.timestamp).getTime() / bucketMs) * bucketMs;
+      
+      if (!groupedByVariant.has(point.variantId)) {
+        groupedByVariant.set(point.variantId, new Map());
+      }
+      
+      const variantBuckets = groupedByVariant.get(point.variantId)!;
+      // Keep the latest point in each bucket (for cumulative data, this is the max value)
+      variantBuckets.set(bucketStart, point);
+    }
+    
+    // Flatten back to array, sorted by timestamp
+    const result: AnalyticsPoint[] = [];
+    groupedByVariant.forEach((buckets) => {
+      buckets.forEach((point) => {
+        result.push(point);
+      });
+    });
+    
+    return result.sort((a, b) => 
+      new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
   }
 
   async createAnalyticsBatch(points: Omit<AnalyticsPoint, "id">[]): Promise<void> {

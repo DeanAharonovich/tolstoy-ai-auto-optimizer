@@ -62,65 +62,101 @@ async function seedDatabase() {
     ]
   });
 
-  // Generate analytics data with gradual growth from 0
+  // Generate analytics data with CUMULATIVE growth from 0
+  // Data stored with 15-minute granularity for maximum flexibility
   const now = new Date();
   const analyticsData = [];
   
-  // Running test data - 7 days of hourly data (168 points)
-  for (let i = 0; i < 168; i++) {
-    const timestamp = subHours(now, 168 - i);
-    const dayProgress = i / 168; // 0 to 1 progress through the test
+  // Generate 30 days of 15-minute interval data (2880 points per variant)
+  const totalPoints = 30 * 24 * 4; // 30 days, 4 points per hour
+  
+  // Running test - Variant A and B cumulative totals
+  let runningA = { views: 0, conversions: 0, interactions: 0 };
+  let runningB = { views: 0, conversions: 0, interactions: 0 };
+  
+  for (let i = 0; i < totalPoints; i++) {
+    const timestamp = new Date(now.getTime() - (totalPoints - i) * 15 * 60 * 1000);
+    const progress = i / totalPoints; // 0 to 1
     
-    // Add noise function
-    const noise = () => (Math.random() - 0.5) * 0.3;
+    // Add noise with time-of-day variation (more activity during business hours)
+    const hour = timestamp.getHours();
+    const dayMultiplier = (hour >= 9 && hour <= 21) ? 1.5 : 0.5;
+    const noise = () => 1 + (Math.random() - 0.5) * 0.4;
     
-    // Variant A - baseline growth (starts at 0, gradual increase)
-    const variantABase = Math.floor(dayProgress * 150 * (1 + noise()));
+    // Variant A - slower growth rate (baseline)
+    const aViewsIncrement = Math.floor(3 * dayMultiplier * noise() * (0.8 + progress * 0.4));
+    const aConversionsIncrement = Math.random() < 0.03 * dayMultiplier ? 1 : 0;
+    const aInteractionsIncrement = Math.floor(aViewsIncrement * 0.08 * noise());
+    
+    runningA.views += aViewsIncrement;
+    runningA.conversions += aConversionsIncrement;
+    runningA.interactions += aInteractionsIncrement;
+    
     analyticsData.push({
       testId: runningTest.id,
       variantId: runningTest.variants[0].id,
       timestamp,
-      views: Math.max(0, variantABase),
-      conversions: Math.max(0, Math.floor(variantABase * 0.03 * (1 + noise()))),
-      interactions: Math.max(0, Math.floor(variantABase * 0.08 * (1 + noise()))),
+      views: runningA.views,
+      conversions: runningA.conversions,
+      interactions: runningA.interactions,
     });
 
-    // Variant B - higher growth trend (clearly winning)
-    const variantBBase = Math.floor(dayProgress * 200 * (1 + noise()));
+    // Variant B - faster growth rate (winning variant, ~30% better)
+    const bViewsIncrement = Math.floor(4 * dayMultiplier * noise() * (0.9 + progress * 0.5));
+    const bConversionsIncrement = Math.random() < 0.045 * dayMultiplier ? 1 : 0;
+    const bInteractionsIncrement = Math.floor(bViewsIncrement * 0.12 * noise());
+    
+    runningB.views += bViewsIncrement;
+    runningB.conversions += bConversionsIncrement;
+    runningB.interactions += bInteractionsIncrement;
+    
     analyticsData.push({
       testId: runningTest.id,
       variantId: runningTest.variants[1].id,
       timestamp,
-      views: Math.max(0, variantBBase),
-      conversions: Math.max(0, Math.floor(variantBBase * 0.045 * (1 + noise()))),
-      interactions: Math.max(0, Math.floor(variantBBase * 0.12 * (1 + noise()))),
+      views: runningB.views,
+      conversions: runningB.conversions,
+      interactions: runningB.interactions,
     });
   }
 
-  // Add analytics for completed test too
-  for (let i = 0; i < 168; i++) {
-    const timestamp = subHours(now, 168 - i);
-    const dayProgress = i / 168;
-    const noise = () => (Math.random() - 0.5) * 0.25;
+  // Completed test - same cumulative pattern
+  let completedA = { views: 0, conversions: 0, interactions: 0 };
+  let completedB = { views: 0, conversions: 0, interactions: 0 };
+  
+  for (let i = 0; i < totalPoints; i++) {
+    const timestamp = new Date(now.getTime() - (totalPoints - i) * 15 * 60 * 1000);
+    const progress = i / totalPoints;
+    const hour = timestamp.getHours();
+    const dayMultiplier = (hour >= 9 && hour <= 21) ? 1.5 : 0.5;
+    const noise = () => 1 + (Math.random() - 0.5) * 0.35;
     
-    const variantABase = Math.floor(dayProgress * 180 * (1 + noise()));
+    const aViewsIncrement = Math.floor(4 * dayMultiplier * noise() * (0.7 + progress * 0.3));
+    completedA.views += aViewsIncrement;
+    completedA.conversions += Math.random() < 0.025 * dayMultiplier ? 1 : 0;
+    completedA.interactions += Math.floor(aViewsIncrement * 0.06 * noise());
+    
     analyticsData.push({
       testId: completedTest.id,
       variantId: completedTest.variants[0].id,
       timestamp,
-      views: Math.max(0, variantABase),
-      conversions: Math.max(0, Math.floor(variantABase * 0.025 * (1 + noise()))),
-      interactions: Math.max(0, Math.floor(variantABase * 0.06 * (1 + noise()))),
+      views: completedA.views,
+      conversions: completedA.conversions,
+      interactions: completedA.interactions,
     });
 
-    const variantBBase = Math.floor(dayProgress * 210 * (1 + noise()));
+    const bViewsIncrement = Math.floor(5 * dayMultiplier * noise() * (0.8 + progress * 0.4));
+    completedB.views += bViewsIncrement;
+    completedB.conversions += Math.random() < 0.038 * dayMultiplier ? 1 : 0;
+    completedB.interactions += Math.floor(bViewsIncrement * 0.09 * noise());
+    
     analyticsData.push({
       testId: completedTest.id,
       variantId: completedTest.variants[1].id,
       timestamp,
-      views: Math.max(0, variantBBase),
-      conversions: Math.max(0, Math.floor(variantBBase * 0.035 * (1 + noise()))),
-      interactions: Math.max(0, Math.floor(variantBBase * 0.09 * (1 + noise()))),
+      views: completedB.views,
+      conversions: completedB.conversions,
+      interactions: completedB.interactions,
     });
   }
   
@@ -165,7 +201,8 @@ export async function registerRoutes(
   });
 
   app.get(api.tests.analytics.path, async (req, res) => {
-    const analytics = await storage.getAnalytics(Number(req.params.id));
+    const timeRange = req.query.timeRange as '1h' | '1d' | '1w' | '1m' | undefined;
+    const analytics = await storage.getAnalytics(Number(req.params.id), timeRange);
     res.json(analytics);
   });
 
