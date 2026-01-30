@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, buildUrl, type CreateTestRequest } from "@shared/routes";
+import { api, buildUrl } from "@shared/routes";
+import type { CreateTestRequest } from "@shared/schema";
 import { z } from "zod";
 
 // Fetch all tests
@@ -81,6 +82,31 @@ export function useAnalyzeTest() {
       });
       if (!res.ok) throw new Error("Failed to generate analysis");
       return api.tests.analyze.responses[200].parse(await res.json());
+    },
+  });
+}
+
+// Apply winner to a test
+export function useApplyWinner() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ testId, winnerVariantId }: { testId: number; winnerVariantId: number }) => {
+      const url = buildUrl(api.tests.applyWinner.path, { id: testId });
+      const res = await fetch(url, {
+        method: api.tests.applyWinner.method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ winnerVariantId }),
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || "Failed to apply winner");
+      }
+      return api.tests.applyWinner.responses[200].parse(await res.json());
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: [api.tests.list.path] });
+      queryClient.invalidateQueries({ queryKey: [api.tests.get.path, variables.testId] });
     },
   });
 }

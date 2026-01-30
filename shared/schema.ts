@@ -8,13 +8,16 @@ import { z } from "zod";
 export const tests = pgTable("tests", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  status: text("status").notNull().default("running"), // 'running' | 'completed'
+  status: text("status").notNull().default("running"), // 'running' | 'completed' | 'winner_applied'
   productName: text("product_name").notNull(),
   targetPopulation: integer("target_population").notNull(),
   durationDays: integer("duration_days").notNull(), // How long the test is scheduled for
   startDate: timestamp("start_date").defaultNow(),
   // Summary stats (cached for list view)
   totalGain: text("total_gain"), // e.g. "+24%"
+  conversionUplift: text("conversion_uplift"), // e.g. "+18%"
+  incomeUplift: text("income_uplift"), // e.g. "+$2,450"
+  winnerVariantId: integer("winner_variant_id"), // ID of the selected winning variant
 });
 
 export const variants = pgTable("variants", {

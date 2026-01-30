@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useRoute, Link } from "wouter";
-import { useTest, useTestAnalytics, useAnalyzeTest } from "@/hooks/use-tests";
-import { ArrowLeft, Clock, Users, PlayCircle, BarChart2, Lightbulb, Loader2, Share2, RefreshCw } from "lucide-react";
+import { useTest, useTestAnalytics, useAnalyzeTest, useApplyWinner } from "@/hooks/use-tests";
+import { ArrowLeft, Clock, Users, PlayCircle, BarChart2, Lightbulb, Loader2, Share2, RefreshCw, Trophy, CheckCircle2 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
@@ -18,6 +19,9 @@ export default function TestDetail() {
   const [timeRange, setTimeRange] = useState<'1h' | '1d' | '1w' | '1m'>('1w');
   const { data: analytics, isLoading: isAnalyticsLoading, refetch: refetchAnalytics } = useTestAnalytics(id, timeRange);
   const { mutate: analyze, isPending: isAnalyzing, data: analysis } = useAnalyzeTest();
+  const { mutate: applyWinner, isPending: isApplyingWinner } = useApplyWinner();
+  const { toast } = useToast();
+  const [selectedWinner, setSelectedWinner] = useState<number | null>(null);
 
   // Handle data refresh
   const handleRefresh = () => {
@@ -78,33 +82,115 @@ export default function TestDetail() {
         </div>
       </div>
 
-      {/* Variants Preview */}
+      {/* Variants Preview with Apply Winner */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {test.variants.map((variant, idx) => (
-          <div key={variant.id} className="group relative bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm hover:shadow-md transition-all">
-            <div className="aspect-video bg-slate-100 relative overflow-hidden">
-               {/* Stock image placeholder using unsplash logic */}
-              <img 
-                src={variant.thumbnailUrl || (idx === 0 
-                  ? "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&auto=format&fit=crop&q=60" /* marketing dashboard chart */
-                  : "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&auto=format&fit=crop&q=60" /* data analytics screen */
-                )} 
-                alt={variant.name} 
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
-              />
-              <div className="absolute inset-0 bg-black/20 group-hover:bg-black/10 transition-colors" />
-              <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between text-white">
-                 <span className="font-medium bg-black/50 px-2 py-1 rounded text-sm backdrop-blur-sm">{variant.name}</span>
-                 <PlayCircle className="w-8 h-8 opacity-80 group-hover:opacity-100 group-hover:scale-110 transition-all" />
+        {test.variants.map((variant, idx) => {
+          const isWinner = test.winnerVariantId === variant.id;
+          const isSelected = selectedWinner === variant.id;
+          
+          return (
+            <div 
+              key={variant.id} 
+              className={cn(
+                "group relative bg-white rounded-2xl border overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer",
+                isWinner ? "border-emerald-500 ring-2 ring-emerald-500/20" : 
+                isSelected ? "border-indigo-500 ring-2 ring-indigo-500/20" : "border-slate-100"
+              )}
+              onClick={() => test.status !== "winner_applied" && setSelectedWinner(variant.id)}
+              data-testid={`variant-card-${variant.id}`}
+            >
+              {isWinner && (
+                <div className="absolute top-3 right-3 z-10 flex items-center gap-1 bg-emerald-500 text-white px-2 py-1 rounded-full text-xs font-medium">
+                  <Trophy className="w-3 h-3" />
+                  Winner
+                </div>
+              )}
+              <div className="aspect-video bg-slate-100 relative overflow-hidden">
+                <img 
+                  src={variant.thumbnailUrl || (idx === 0 
+                    ? "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&auto=format&fit=crop&q=60"
+                    : "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&auto=format&fit=crop&q=60"
+                  )} 
+                  alt={variant.name} 
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                  onError={(e) => {
+                    e.currentTarget.src = idx === 0 
+                      ? "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&auto=format&fit=crop&q=60"
+                      : "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&auto=format&fit=crop&q=60";
+                  }}
+                />
+                <div className="absolute inset-0 bg-black/20 group-hover:bg-black/10 transition-colors" />
+                <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between text-white">
+                   <span className="font-medium bg-black/50 px-2 py-1 rounded text-sm backdrop-blur-sm">{variant.name}</span>
+                   <PlayCircle className="w-8 h-8 opacity-80 group-hover:opacity-100 group-hover:scale-110 transition-all" />
+                </div>
+              </div>
+              <div className="p-4 flex items-center justify-between">
+                <div>
+                  <h4 className="font-semibold text-slate-900">{variant.name}</h4>
+                  <p className="text-sm text-slate-500 mt-1 line-clamp-1">{variant.description || "No description provided."}</p>
+                </div>
+                {isSelected && test.status !== "winner_applied" && (
+                  <CheckCircle2 className="w-5 h-5 text-indigo-600" />
+                )}
               </div>
             </div>
-            <div className="p-4">
-              <h4 className="font-semibold text-slate-900">{variant.name}</h4>
-              <p className="text-sm text-slate-500 mt-1 line-clamp-1">{variant.description || "No description provided."}</p>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
+
+      {/* Apply Winner Button */}
+      {test.status !== "winner_applied" && (
+        <div className="flex items-center justify-center gap-4 p-6 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-2xl border border-indigo-100">
+          <div className="text-center">
+            <h3 className="font-display font-semibold text-slate-900">Ready to apply the winner?</h3>
+            <p className="text-sm text-slate-500 mt-1">
+              {selectedWinner 
+                ? `You selected ${test.variants.find(v => v.id === selectedWinner)?.name}. Click to apply and direct 100% traffic.`
+                : "Select a variant above to apply as the winner."}
+            </p>
+          </div>
+          <Button 
+            onClick={() => {
+              if (!selectedWinner) return;
+              applyWinner({ testId: id, winnerVariantId: selectedWinner }, {
+                onSuccess: () => {
+                  toast({
+                    title: "Winner Applied",
+                    description: "100% of traffic will now be directed to the winning variant.",
+                  });
+                },
+                onError: (error) => {
+                  toast({
+                    title: "Error",
+                    description: error.message,
+                    variant: "destructive",
+                  });
+                },
+              });
+            }}
+            disabled={!selectedWinner || isApplyingWinner}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            data-testid="button-apply-winner"
+          >
+            {isApplyingWinner ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Trophy className="w-4 h-4 mr-2" />
+            )}
+            Apply Winner
+          </Button>
+        </div>
+      )}
+
+      {test.status === "winner_applied" && (
+        <div className="flex items-center justify-center gap-3 p-4 bg-emerald-50 rounded-xl border border-emerald-200">
+          <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+          <p className="text-emerald-700 font-medium">
+            Winner applied! 100% traffic is now directed to {test.variants.find(v => v.id === test.winnerVariantId)?.name}.
+          </p>
+        </div>
+      )}
 
       {/* Analytics Chart Section */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-6">

@@ -73,7 +73,19 @@ export const api = {
         200: z.array(z.custom<typeof analytics.$inferSelect>()),
         404: errorSchemas.notFound,
       },
-    }
+    },
+    applyWinner: {
+      method: 'POST' as const,
+      path: '/api/tests/:id/apply-winner',
+      input: z.object({
+        winnerVariantId: z.number(),
+      }),
+      responses: {
+        200: z.custom<typeof tests.$inferSelect>(),
+        404: errorSchemas.notFound,
+        400: errorSchemas.validation,
+      },
+    },
   },
 };
 

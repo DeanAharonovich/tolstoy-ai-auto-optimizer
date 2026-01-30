@@ -10,6 +10,7 @@ export interface IStorage {
   getAllTests(): Promise<Test[]>;
   getTest(id: number): Promise<TestWithVariants | undefined>;
   createTest(test: CreateTestRequest): Promise<TestWithVariants>;
+  updateTestWinner(testId: number, winnerVariantId: number): Promise<Test | undefined>;
   
   // Analytics
   getAnalytics(testId: number): Promise<AnalyticsPoint[]>;
@@ -40,7 +41,9 @@ export class DatabaseStorage implements IStorage {
       targetPopulation: req.targetPopulation,
       durationDays: req.durationDays,
       status: "running",
-      totalGain: "+0%"
+      totalGain: (req as any).totalGain || "+0%",
+      conversionUplift: (req as any).conversionUplift || "+0%",
+      incomeUplift: (req as any).incomeUplift || "$0",
     }).returning();
 
     const createdVariants = [];
@@ -68,6 +71,17 @@ export class DatabaseStorage implements IStorage {
   async createAnalyticsBatch(points: Omit<AnalyticsPoint, "id">[]): Promise<void> {
     if (points.length === 0) return;
     await db.insert(analytics).values(points);
+  }
+
+  async updateTestWinner(testId: number, winnerVariantId: number): Promise<Test | undefined> {
+    const [updated] = await db.update(tests)
+      .set({ 
+        winnerVariantId: winnerVariantId,
+        status: "winner_applied"
+      })
+      .where(eq(tests.id, testId))
+      .returning();
+    return updated;
   }
 }
 

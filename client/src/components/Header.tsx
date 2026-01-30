@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { Sparkles, LayoutGrid, PlusCircle } from "lucide-react";
+import { Sparkles, LayoutGrid } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function Header() {
@@ -7,7 +7,6 @@ export function Header() {
 
   const navItems = [
     { label: "Dashboard", href: "/", icon: LayoutGrid },
-    { label: "New Test", href: "/create", icon: PlusCircle },
   ];
 
   return (

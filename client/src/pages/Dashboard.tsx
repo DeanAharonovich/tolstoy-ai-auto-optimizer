@@ -31,7 +31,7 @@ export default function Dashboard() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <MetricCard 
           label="Active Tests" 
           value={tests?.filter(t => t.status === 'running').length || 0} 
@@ -41,13 +41,30 @@ export default function Dashboard() {
           label="Total Reach" 
           value={(tests?.reduce((acc, t) => acc + t.targetPopulation, 0) || 0).toLocaleString()} 
           icon={<Users className="w-5 h-5" />}
-          trend={{ value: 12, isPositive: true }}
         />
         <MetricCard 
-          label="Avg. Lift" 
-          value="+14.2%" 
+          label="Total Conversion Uplift" 
+          value={(() => {
+            const totalUplift = tests?.reduce((acc, t) => {
+              const uplift = parseFloat((t.conversionUplift || "+0%").replace(/[^0-9.-]/g, '')) || 0;
+              return acc + uplift;
+            }, 0) || 0;
+            return `+${totalUplift.toFixed(1)}%`;
+          })()} 
           icon={<TrendingUp className="w-5 h-5" />}
-          trend={{ value: 2.4, isPositive: true }}
+          trend={{ value: 30.8, isPositive: true }}
+        />
+        <MetricCard 
+          label="Total Income Uplift" 
+          value={(() => {
+            const totalIncome = tests?.reduce((acc, t) => {
+              const income = parseFloat((t.incomeUplift || "$0").replace(/[^0-9.-]/g, '')) || 0;
+              return acc + income;
+            }, 0) || 0;
+            return `+$${totalIncome.toLocaleString()}`;
+          })()} 
+          icon={<TrendingUp className="w-5 h-5" />}
+          trend={{ value: 5140, isPositive: true }}
         />
       </div>
 
@@ -84,7 +101,7 @@ export default function Dashboard() {
               <p className="text-slate-500 mt-1 max-w-sm mx-auto">
                 Try adjusting your search or create a new experiment to get started.
               </p>
-              <Button onClick={() => setCreateOpen(true)} variant="link" className="mt-2 text-indigo-600">
+              <Button onClick={() => setCreateOpen(true)} variant="ghost" className="mt-2 text-indigo-600">
                 Create new test
               </Button>
             </div>
