@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useRoute, Link } from "wouter";
 import { useTest, useTestAnalytics, useAnalyzeTest, useApplyWinner } from "@/hooks/use-tests";
-import { ArrowLeft, Clock, Users, PlayCircle, BarChart2, Lightbulb, Loader2, Share2, RefreshCw, Trophy, CheckCircle2, Play, Square, Edit2 } from "lucide-react";
+import { ArrowLeft, Clock, Users, PlayCircle, BarChart2, Lightbulb, Loader2, Share2, RefreshCw, Trophy, CheckCircle2, Play, Square, Edit2, ImageOff, VideoOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -13,6 +13,19 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { CreateTestDialog } from "@/components/CreateTestDialog";
 import { queryClient } from "@/lib/queryClient";
+
+const FALLBACK_THUMBNAILS = [
+  "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&auto=format&fit=crop&q=60",
+  "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&auto=format&fit=crop&q=60",
+  "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800&auto=format&fit=crop&q=60",
+];
+
+function isValidUrl(url: string): boolean {
+  if (!url) return false;
+  if (url.startsWith('/objects/')) return true;
+  if (url.startsWith('http://') || url.startsWith('https://')) return true;
+  return false;
+}
 
 export default function TestDetail() {
   const [, params] = useRoute("/tests/:id");
@@ -28,8 +41,8 @@ export default function TestDetail() {
   const [previewVideo, setPreviewVideo] = useState<string | null>(null);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
+  const [imageErrors, setImageErrors] = useState<Record<number, boolean>>({});
 
-  // Handle data refresh
   const handleRefresh = () => {
     refetchTest();
     refetchAnalytics();
@@ -47,6 +60,24 @@ export default function TestDetail() {
     } finally {
       setIsStarting(false);
     }
+  };
+
+  const handleImageError = (variantId: number) => {
+    setImageErrors(prev => ({ ...prev, [variantId]: true }));
+  };
+
+  const getThumbnailUrl = (variant: any, idx: number): string => {
+    if (imageErrors[variant.id]) {
+      return FALLBACK_THUMBNAILS[idx % FALLBACK_THUMBNAILS.length];
+    }
+    if (isValidUrl(variant.thumbnailUrl)) {
+      return variant.thumbnailUrl;
+    }
+    return FALLBACK_THUMBNAILS[idx % FALLBACK_THUMBNAILS.length];
+  };
+
+  const hasValidVideo = (variant: any): boolean => {
+    return isValidUrl(variant.videoUrl) && !variant.videoUrl.includes('example.com');
   };
 
   if (isTestLoading) {
@@ -124,7 +155,8 @@ export default function TestDetail() {
         {test.variants.map((variant, idx) => {
           const isWinner = test.winnerVariantId === variant.id;
           const isSelected = selectedWinner === variant.id;
-          const thumbUrl = variant.thumbnailUrl.startsWith('/') ? variant.thumbnailUrl : variant.thumbnailUrl;
+          const thumbUrl = getThumbnailUrl(variant, idx);
+          const canPlayVideo = hasValidVideo(variant);
           
           return (
             <div 
@@ -147,19 +179,27 @@ export default function TestDetail() {
                   src={thumbUrl} 
                   alt={variant.name} 
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                  onError={() => handleImageError(variant.id)}
                 />
                 <div className="absolute inset-0 bg-black/20 group-hover:bg-black/10 transition-colors flex items-center justify-center">
-                  <Button 
-                    size="icon" 
-                    variant="ghost" 
-                    className="text-white bg-black/40 hover:bg-black/60 rounded-full h-12 w-12"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setPreviewVideo(variant.videoUrl);
-                    }}
-                  >
-                    <PlayCircle className="w-8 h-8" />
-                  </Button>
+                  {canPlayVideo ? (
+                    <Button 
+                      size="icon" 
+                      variant="ghost" 
+                      className="text-white bg-black/40 hover:bg-black/60 rounded-full h-12 w-12"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPreviewVideo(variant.videoUrl);
+                      }}
+                    >
+                      <PlayCircle className="w-8 h-8" />
+                    </Button>
+                  ) : (
+                    <div className="text-white/60 flex flex-col items-center gap-1">
+                      <VideoOff className="w-6 h-6" />
+                      <span className="text-xs">No video</span>
+                    </div>
+                  )}
                 </div>
                 <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between text-white">
                    <span className="font-medium bg-black/50 px-2 py-1 rounded text-sm backdrop-blur-sm">{variant.name}</span>
@@ -260,7 +300,7 @@ export default function TestDetail() {
         </div>
       )}
 
-      {/* Dialogs */}
+      {/* Video Preview Dialog */}
       <Dialog open={!!previewVideo} onOpenChange={() => setPreviewVideo(null)}>
         <DialogContent className="max-w-4xl p-0 bg-black overflow-hidden border-none">
           <video src={previewVideo || ""} controls autoPlay className="w-full h-full aspect-video" />
