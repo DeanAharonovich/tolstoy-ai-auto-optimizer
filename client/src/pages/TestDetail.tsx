@@ -162,11 +162,10 @@ export default function TestDetail() {
             <div 
               key={variant.id} 
               className={cn(
-                "group relative bg-white rounded-2xl border overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer",
+                "group relative bg-white rounded-2xl border overflow-hidden shadow-sm hover:shadow-md transition-all",
                 isWinner ? "border-emerald-500 ring-2 ring-emerald-500/20" : 
                 isSelected ? "border-indigo-500 ring-2 ring-indigo-500/20" : "border-slate-100"
               )}
-              onClick={() => test.status !== "winner_applied" && setSelectedWinner(variant.id)}
             >
               {isWinner && (
                 <div className="absolute top-3 right-3 z-10 flex items-center gap-1 bg-emerald-500 text-white px-2 py-1 rounded-full text-xs font-medium">
@@ -218,9 +217,6 @@ export default function TestDetail() {
                   <h4 className="font-semibold text-slate-900">{variant.name}</h4>
                   <p className="text-sm text-slate-500 mt-1 line-clamp-1">{variant.description || "No description provided."}</p>
                 </div>
-                {isSelected && test.status !== "winner_applied" && (
-                  <CheckCircle2 className="w-5 h-5 text-indigo-600" />
-                )}
               </div>
             </div>
           );
