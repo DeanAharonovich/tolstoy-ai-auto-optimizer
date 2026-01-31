@@ -126,50 +126,151 @@ export async function registerRoutes(
       return res.status(404).json({ message: 'Test not found' });
     }
 
-    const analyticsData = await storage.getAnalytics(testId, '1w');
+    // Fetch ALL analytics data for comprehensive analysis
+    const analyticsData = await storage.getAnalytics(testId, '1m');
     
+    // Calculate advanced metrics per variant
     const variantStats = test.variants.map(variant => {
       const variantData = analyticsData.filter(a => a.variantId === variant.id);
       const latestData = variantData[variantData.length - 1];
+      const views = latestData?.views || 0;
+      const conversions = latestData?.conversions || 0;
+      const conversionRate = views > 0 ? (conversions / views) * 100 : 0;
+      
       return {
+        variantId: variant.id,
         name: variant.name,
         description: variant.description,
-        views: latestData?.views || 0,
-        conversions: latestData?.conversions || 0,
+        views,
+        conversions,
         interactions: latestData?.interactions || 0,
-        conversionRate: latestData?.views > 0 
-          ? ((latestData.conversions / latestData.views) * 100).toFixed(2) 
-          : "0"
+        conversionRate: parseFloat(conversionRate.toFixed(3))
       };
     });
 
-    const prompt = `You are an A/B testing analytics expert. Analyze the following test results and provide insights.
+    // Find baseline (first variant) and calculate uplift for others
+    const baseline = variantStats[0];
+    const metricsWithUplift = variantStats.map((v, idx) => ({
+      variantName: v.name,
+      conversionRate: v.conversionRate,
+      views: v.views,
+      conversions: v.conversions,
+      uplift: idx === 0 ? undefined : 
+        baseline.conversionRate > 0 
+          ? parseFloat(((v.conversionRate - baseline.conversionRate) / baseline.conversionRate * 100).toFixed(2))
+          : 0
+    }));
 
-Test: "${test.name}" (Product: ${test.productName})
-Duration: ${test.durationDays} days
-Target Population: ${test.targetPopulation.toLocaleString()}
+    // Calculate statistical significance using proper two-tailed z-test
+    function calculateStatisticalSignificance(
+      conversions1: number, views1: number,
+      conversions2: number, views2: number
+    ): { significant: boolean; confidence: number; pValue: number } {
+      if (views1 === 0 || views2 === 0) {
+        return { significant: false, confidence: 0, pValue: 1 };
+      }
+      
+      const p1 = conversions1 / views1;
+      const p2 = conversions2 / views2;
+      const pPooled = (conversions1 + conversions2) / (views1 + views2);
+      
+      const se = Math.sqrt(pPooled * (1 - pPooled) * (1/views1 + 1/views2));
+      if (se === 0) return { significant: false, confidence: 0, pValue: 1 };
+      
+      const z = Math.abs(p1 - p2) / se;
+      
+      // Approximate two-tailed p-value using error function approximation
+      // Using Abramowitz and Stegun approximation for normal CDF
+      function normalCDF(x: number): number {
+        const a1 =  0.254829592;
+        const a2 = -0.284496736;
+        const a3 =  1.421413741;
+        const a4 = -1.453152027;
+        const a5 =  1.061405429;
+        const p  =  0.3275911;
+        const sign = x < 0 ? -1 : 1;
+        x = Math.abs(x) / Math.sqrt(2);
+        const t = 1.0 / (1.0 + p * x);
+        const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+        return 0.5 * (1.0 + sign * y);
+      }
+      
+      // Two-tailed p-value
+      const pValue = 2 * (1 - normalCDF(z));
+      const confidence = Math.min(99.9, Math.max(0, (1 - pValue) * 100));
+      
+      return {
+        significant: pValue < 0.05, // 95% significance threshold
+        confidence: parseFloat(confidence.toFixed(1)),
+        pValue: parseFloat(pValue.toFixed(4))
+      };
+    }
 
-Variant Performance Data:
+    // Compare best performing variant to baseline
+    const bestVariant = variantStats.reduce((best, curr) => 
+      curr.conversionRate > best.conversionRate ? curr : best
+    );
+    
+    const significance = variantStats.length >= 2 
+      ? calculateStatisticalSignificance(
+          baseline.conversions, baseline.views,
+          bestVariant.conversions, bestVariant.views
+        )
+      : { significant: false, confidence: 0, pValue: 1 };
+
+    // Calculate test duration
+    const durationDays = Math.ceil(
+      (new Date(test.endTime).getTime() - new Date(test.startTime).getTime()) / (1000 * 60 * 60 * 24)
+    );
+
+    // Build comprehensive prompt for AI analysis
+    const prompt = `You are a senior e-commerce conversion optimization expert analyzing A/B test results for video content.
+
+## Test Context
+- Test Name: "${test.name}"
+- Product: ${test.productName}
+- Target Audience: ${test.targetPopulation.toLocaleString()} users
+- Duration: ${durationDays} days
+- Current Status: ${test.status}
+
+## Variant Performance Data
 ${variantStats.map((v, i) => `
-Variant ${i + 1}: ${v.name}
-- Description: ${v.description || 'No description'}
-- Total Views: ${v.views.toLocaleString()}
-- Total Conversions: ${v.conversions}
-- Conversion Rate: ${v.conversionRate}%
-- Interactions: ${v.interactions}
+### ${v.name} ${i === 0 ? '(Control)' : `(Test Variant ${i})`}
+- Description: ${v.description || 'No description provided'}
+- Total Impressions: ${v.views.toLocaleString()}
+- Total Conversions: ${v.conversions.toLocaleString()}
+- Conversion Rate: ${v.conversionRate.toFixed(3)}%
+- Interactions: ${v.interactions.toLocaleString()}
+${i > 0 ? `- Uplift vs Control: ${metricsWithUplift[i].uplift}%` : ''}
 `).join('\n')}
 
-Provide a brief analysis in JSON format with exactly these keys:
-- "summary": A 1-2 sentence summary of the performance difference and which variant is performing better
-- "recommendation": A clear recommendation on which variant to choose and why
+## Statistical Analysis
+- Statistical Significance: ${significance.significant ? 'YES' : 'NO'} (${significance.confidence}% confidence)
+- Best Performer: ${bestVariant.name} with ${bestVariant.conversionRate.toFixed(3)}% conversion rate
 
-Return ONLY valid JSON, no markdown.`;
+## Your Task
+Provide a professional, data-driven analysis in JSON format with these exact keys:
+1. "summary": A 2-3 sentence executive summary explaining the key findings and which variant is winning.
+2. "winningVariantReasoning": A detailed explanation (3-4 sentences) of WHY the winning variant performed better. Consider video content strategy, user psychology, and e-commerce best practices.
+3. "estimatedRevenueGrowth": A realistic percentage estimate of potential revenue growth if the winning variant is implemented (e.g., "+12-18%"). Base this on the conversion uplift data.
+4. "nextSteps": An array of 3-4 specific, actionable recommendations for the brand to maximize results.
+
+Focus on actionable insights. Be specific about video content elements that drive performance.
+
+Return ONLY valid JSON, no markdown code blocks.`;
 
     try {
       const response = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [{ role: "user", content: prompt }],
-        max_tokens: 300,
+        model: "gpt-4o",
+        messages: [
+          { 
+            role: "system", 
+            content: "You are an elite e-commerce analytics consultant specializing in video A/B testing and conversion optimization. Provide data-driven, actionable insights."
+          },
+          { role: "user", content: prompt }
+        ],
+        max_tokens: 800,
+        temperature: 0.7,
         response_format: { type: "json_object" }
       });
 
@@ -178,8 +279,22 @@ Return ONLY valid JSON, no markdown.`;
         throw new Error("No response from AI");
       }
 
-      const analysis = JSON.parse(content);
-      res.json(analysis);
+      const aiAnalysis = JSON.parse(content);
+      
+      // Combine AI insights with calculated metrics
+      const analysisResponse = {
+        summary: aiAnalysis.summary || "Analysis complete.",
+        winningVariantReasoning: aiAnalysis.winningVariantReasoning || "Unable to determine reasoning.",
+        estimatedRevenueGrowth: aiAnalysis.estimatedRevenueGrowth || "N/A",
+        nextSteps: aiAnalysis.nextSteps || ["Continue monitoring test performance"],
+        metrics: metricsWithUplift,
+        statisticalSignificance: significance.significant 
+          ? `Statistically significant at ${significance.confidence}% confidence`
+          : `Not yet significant (${significance.confidence}% confidence)`,
+        confidence: significance.confidence
+      };
+      
+      res.json(analysisResponse);
       
     } catch (error) {
       console.error("AI Analysis failed:", error);

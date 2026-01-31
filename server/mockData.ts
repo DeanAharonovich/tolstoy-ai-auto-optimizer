@@ -2,7 +2,8 @@ export interface MockTestData {
   name: string;
   productName: string;
   targetPopulation: number;
-  durationDays: number;
+  startTime: Date;
+  endTime: Date;
   status: string;
   conversionUplift: string;
   incomeUplift: string;

@@ -94,5 +94,16 @@ export type AnalysisRequest = {
 
 export type AnalysisResponse = {
   summary: string;
-  recommendation: string;
+  winningVariantReasoning: string;
+  estimatedRevenueGrowth: string;
+  nextSteps: string[];
+  metrics: {
+    variantName: string;
+    conversionRate: number;
+    views: number;
+    conversions: number;
+    uplift?: number;
+  }[];
+  statisticalSignificance: string;
+  confidence: number;
 };

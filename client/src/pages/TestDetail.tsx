@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useRoute, Link } from "wouter";
 import { useTest, useTestAnalytics, useAnalyzeTest, useApplyWinner } from "@/hooks/use-tests";
-import { ArrowLeft, Clock, Users, PlayCircle, BarChart2, Lightbulb, Loader2, Share2, RefreshCw, Trophy, CheckCircle2, Play, Square, Edit2, ImageOff, VideoOff } from "lucide-react";
+import { ArrowLeft, Clock, Users, PlayCircle, BarChart2, Lightbulb, Loader2, Share2, RefreshCw, Trophy, CheckCircle2, Play, Square, Edit2, ImageOff, VideoOff, Sparkles, TrendingUp, Target, ArrowUpRight, ChevronRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -280,6 +280,189 @@ export default function TestDetail() {
                   ))}
                 </LineChart>
               </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* AI Insights Section */}
+      {test.status !== 'draft' && (
+        <div className="relative overflow-hidden rounded-2xl border border-white/20 bg-gradient-to-br from-indigo-900/90 via-purple-900/80 to-slate-900/90 shadow-xl backdrop-blur-xl">
+          {/* Glass overlay effect */}
+          <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent pointer-events-none" />
+          <div className="absolute -top-24 -right-24 w-64 h-64 bg-purple-500/20 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
+          
+          <div className="relative p-6 space-y-6">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-gradient-to-br from-amber-400 to-orange-500 rounded-xl shadow-lg shadow-amber-500/20">
+                  <Sparkles className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-display font-semibold text-white flex items-center gap-2">
+                    AI Insights Engine
+                    <span className="text-[10px] px-2 py-0.5 bg-amber-400/20 text-amber-300 rounded-full font-medium">BETA</span>
+                  </h3>
+                  <p className="text-sm text-slate-300/80">Powered by advanced analytics & machine learning</p>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => analyze(id)}
+                disabled={isAnalyzing}
+                className="bg-white/10 border-white/20 text-white hover:bg-white/20 hover:text-white backdrop-blur-sm"
+                data-testid="button-regenerate-analysis"
+              >
+                {isAnalyzing ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                )}
+                {analysis ? 'Regenerate Analysis' : 'Generate Analysis'}
+              </Button>
+            </div>
+
+            {/* Loading State */}
+            {isAnalyzing && (
+              <div className="space-y-4">
+                <div className="h-4 bg-white/10 rounded-full animate-pulse w-3/4" />
+                <div className="h-4 bg-white/10 rounded-full animate-pulse w-1/2" />
+                <div className="h-4 bg-white/10 rounded-full animate-pulse w-2/3" />
+                <div className="grid grid-cols-3 gap-4 mt-6">
+                  <div className="h-24 bg-white/5 rounded-xl animate-pulse" />
+                  <div className="h-24 bg-white/5 rounded-xl animate-pulse" />
+                  <div className="h-24 bg-white/5 rounded-xl animate-pulse" />
+                </div>
+              </div>
+            )}
+
+            {/* No Analysis State */}
+            {!isAnalyzing && !analysis && (
+              <div className="text-center py-8">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-white/5 flex items-center justify-center">
+                  <Lightbulb className="w-8 h-8 text-slate-400" />
+                </div>
+                <p className="text-slate-300 mb-2">No analysis generated yet</p>
+                <p className="text-sm text-slate-400">Click "Generate Analysis" to get AI-powered insights</p>
+              </div>
+            )}
+
+            {/* Analysis Results */}
+            {!isAnalyzing && analysis && (
+              <div className="space-y-6">
+                {/* Summary */}
+                <div className="p-4 rounded-xl bg-white/5 border border-white/10" data-testid="text-analysis-summary">
+                  <p className="text-white/90 leading-relaxed">{analysis.summary}</p>
+                </div>
+
+                {/* Metrics Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {analysis.metrics.map((metric, idx) => (
+                    <div 
+                      key={metric.variantName}
+                      data-testid={`card-metric-${idx}`}
+                      className={cn(
+                        "p-4 rounded-xl border transition-all",
+                        idx === 0 
+                          ? "bg-white/5 border-white/10" 
+                          : metric.uplift && metric.uplift > 0 
+                            ? "bg-emerald-500/10 border-emerald-400/30"
+                            : "bg-white/5 border-white/10"
+                      )}
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-sm font-medium text-white/80">{metric.variantName}</span>
+                        {idx > 0 && metric.uplift !== undefined && (
+                          <span className={cn(
+                            "text-xs px-2 py-0.5 rounded-full font-medium flex items-center gap-1",
+                            metric.uplift > 0 
+                              ? "bg-emerald-400/20 text-emerald-300" 
+                              : metric.uplift < 0 
+                                ? "bg-red-400/20 text-red-300"
+                                : "bg-slate-400/20 text-slate-300"
+                          )}>
+                            {metric.uplift > 0 ? <TrendingUp className="w-3 h-3" /> : null}
+                            {metric.uplift > 0 ? '+' : ''}{metric.uplift.toFixed(1)}%
+                          </span>
+                        )}
+                        {idx === 0 && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-slate-400/20 text-slate-300">Control</span>
+                        )}
+                      </div>
+                      <div className="text-2xl font-bold text-white mb-1">{metric.conversionRate.toFixed(2)}%</div>
+                      <div className="text-xs text-slate-400">
+                        {metric.conversions.toLocaleString()} / {metric.views.toLocaleString()} conversions
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Significance Badge */}
+                <div className="flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-white/10" data-testid="text-statistical-significance">
+                  <Target className="w-5 h-5 text-indigo-400" />
+                  <div className="flex-1">
+                    <span className="text-sm text-white/80">{analysis.statisticalSignificance}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="h-2 w-24 bg-white/10 rounded-full overflow-hidden">
+                      <div 
+                        className={cn(
+                          "h-full rounded-full transition-all",
+                          analysis.confidence >= 95 ? "bg-emerald-400" : 
+                          analysis.confidence >= 80 ? "bg-amber-400" : "bg-slate-400"
+                        )}
+                        style={{ width: `${Math.min(100, analysis.confidence)}%` }}
+                      />
+                    </div>
+                    <span className="text-xs text-slate-400">{analysis.confidence}%</span>
+                  </div>
+                </div>
+
+                {/* Winning Variant Reasoning */}
+                <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-500/10 to-teal-500/10 border border-emerald-400/20" data-testid="text-winning-reasoning">
+                  <div className="flex items-start gap-3">
+                    <div className="p-1.5 bg-emerald-400/20 rounded-lg mt-0.5">
+                      <Trophy className="w-4 h-4 text-emerald-400" />
+                    </div>
+                    <div>
+                      <h4 className="font-medium text-emerald-300 mb-1">Why the Winner Performed Better</h4>
+                      <p className="text-sm text-white/70 leading-relaxed">{analysis.winningVariantReasoning}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Revenue Growth Estimate */}
+                <div className="flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-purple-500/10 to-indigo-500/10 border border-purple-400/20" data-testid="text-revenue-growth">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-purple-400/20 rounded-lg">
+                      <ArrowUpRight className="w-5 h-5 text-purple-400" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-400 uppercase tracking-wide">Estimated Revenue Growth</p>
+                      <p className="text-xl font-bold text-white">{analysis.estimatedRevenueGrowth}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Next Steps */}
+                <div className="p-4 rounded-xl bg-white/5 border border-white/10" data-testid="section-next-steps">
+                  <h4 className="font-medium text-white mb-3 flex items-center gap-2">
+                    <Lightbulb className="w-4 h-4 text-amber-400" />
+                    Recommended Next Steps
+                  </h4>
+                  <ul className="space-y-2">
+                    {analysis.nextSteps.map((step, idx) => (
+                      <li key={idx} className="flex items-start gap-2 text-sm text-white/70" data-testid={`text-next-step-${idx}`}>
+                        <ChevronRight className="w-4 h-4 text-indigo-400 mt-0.5 shrink-0" />
+                        <span>{step}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
             )}
           </div>
         </div>

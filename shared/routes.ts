@@ -58,7 +58,18 @@ export const api = {
       responses: {
         200: z.object({
           summary: z.string(),
-          recommendation: z.string(),
+          winningVariantReasoning: z.string(),
+          estimatedRevenueGrowth: z.string(),
+          nextSteps: z.array(z.string()),
+          metrics: z.array(z.object({
+            variantName: z.string(),
+            conversionRate: z.number(),
+            views: z.number(),
+            conversions: z.number(),
+            uplift: z.number().optional(),
+          })),
+          statisticalSignificance: z.string(),
+          confidence: z.number(),
         }),
         404: errorSchemas.notFound,
         500: errorSchemas.internal,
