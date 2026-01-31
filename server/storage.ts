@@ -19,6 +19,14 @@ export interface IStorage {
   // Analytics
   getAnalytics(testId: number, timeRange?: TimeRange): Promise<AnalyticsPoint[]>;
   createAnalyticsBatch(points: Omit<AnalyticsPoint, "id">[]): Promise<void>;
+  
+  // Aggregate Metrics
+  getAggregateMetrics(): Promise<{
+    totalConversionUplift: string;
+    totalIncomeUplift: string;
+    activeTests: number;
+    totalReach: number;
+  }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -44,10 +52,11 @@ export class DatabaseStorage implements IStorage {
       productName: req.productName,
       targetPopulation: req.targetPopulation,
       durationDays: req.durationDays,
-      status: "draft",
-      totalGain: (req as any).totalGain || "+0%",
-      conversionUplift: (req as any).conversionUplift || "+21%",
-      incomeUplift: (req as any).incomeUplift || "+$21,501",
+      status: (req as any).status || "draft",
+      totalGain: (req as any).totalGain || null,
+      conversionUplift: (req as any).conversionUplift || null,
+      incomeUplift: (req as any).incomeUplift || null,
+      isMock: (req as any).isMock || false,
     }).returning();
 
     const createdVariants = [];
@@ -145,14 +154,60 @@ export class DatabaseStorage implements IStorage {
     const [updated] = await db.update(tests)
       .set({ 
         winnerVariantId: winnerVariantId,
-        status: "winner_applied",
-        totalGain: "+21%",
-        conversionUplift: "+21%",
-        incomeUplift: "+$21,501"
+        status: "winner_applied"
       })
       .where(eq(tests.id, testId))
       .returning();
     return updated;
+  }
+
+  async getAggregateMetrics(): Promise<{ 
+    totalConversionUplift: string; 
+    totalIncomeUplift: string;
+    activeTests: number;
+    totalReach: number;
+  }> {
+    const allTests = await db.select().from(tests);
+    
+    let totalConversionPercent = 0;
+    let totalIncomeDollars = 0;
+    let testsWithMetrics = 0;
+    let activeTests = 0;
+    let totalReach = 0;
+
+    for (const test of allTests) {
+      totalReach += test.targetPopulation;
+      
+      if (test.status === 'running') {
+        activeTests++;
+      }
+      
+      if (test.conversionUplift) {
+        const match = test.conversionUplift.match(/([+-]?\d+\.?\d*)%?/);
+        if (match) {
+          totalConversionPercent += parseFloat(match[1]);
+          testsWithMetrics++;
+        }
+      }
+      
+      if (test.incomeUplift) {
+        const match = test.incomeUplift.match(/([+-]?\$?)([\d,]+\.?\d*)/);
+        if (match) {
+          totalIncomeDollars += parseFloat(match[2].replace(/,/g, ''));
+        }
+      }
+    }
+
+    const avgConversion = testsWithMetrics > 0 
+      ? (totalConversionPercent / testsWithMetrics).toFixed(1) 
+      : "0";
+
+    return {
+      totalConversionUplift: testsWithMetrics > 0 ? `+${avgConversion}%` : "—",
+      totalIncomeUplift: totalIncomeDollars > 0 ? `+$${totalIncomeDollars.toLocaleString()}` : "—",
+      activeTests,
+      totalReach
+    };
   }
 
   async updateTestStatus(testId: number, status: string): Promise<Test | undefined> {
