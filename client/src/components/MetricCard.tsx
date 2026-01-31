@@ -10,9 +10,10 @@ interface MetricCardProps {
   };
   icon?: React.ReactNode;
   className?: string;
+  valueClassName?: string;
 }
 
-export function MetricCard({ label, value, trend, icon, className }: MetricCardProps) {
+export function MetricCard({ label, value, trend, icon, className, valueClassName }: MetricCardProps) {
   return (
     <div className={cn(
       "bg-white rounded-xl p-6 border border-slate-100 shadow-sm hover:shadow-md transition-shadow", 
@@ -21,7 +22,7 @@ export function MetricCard({ label, value, trend, icon, className }: MetricCardP
       <div className="flex items-start justify-between">
         <div>
           <p className="text-sm font-medium text-slate-500">{label}</p>
-          <h3 className="text-2xl font-bold mt-1 font-display text-slate-900">{value}</h3>
+          <h3 className={cn("text-2xl font-bold mt-1 font-display text-slate-900", valueClassName)}>{value}</h3>
         </div>
         {icon && <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600">{icon}</div>}
       </div>

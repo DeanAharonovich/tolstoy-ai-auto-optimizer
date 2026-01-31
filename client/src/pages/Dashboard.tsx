@@ -20,6 +20,11 @@ export default function Dashboard() {
     t.productName.toLowerCase().includes(search.toLowerCase())
   );
 
+  const getUpliftColor = (uplift: string | undefined) => {
+    if (!uplift || uplift === "—") return "text-slate-900";
+    return uplift.includes("+") ? "text-emerald-600" : uplift.includes("-") ? "text-red-600" : "text-slate-900";
+  };
+
   return (
     <div className="space-y-8 animate-fade-in">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -47,11 +52,13 @@ export default function Dashboard() {
           label="Total Conversion Uplift" 
           value={metrics?.totalConversionUplift ?? "—"} 
           icon={<TrendingUp className="w-5 h-5" />}
+          valueClassName={getUpliftColor(metrics?.totalConversionUplift)}
         />
         <MetricCard 
           label="Total Income Uplift" 
           value={metrics?.totalIncomeUplift ?? "—"} 
           icon={<TrendingUp className="w-5 h-5" />}
+          valueClassName={getUpliftColor(metrics?.totalIncomeUplift)}
         />
       </div>
 
