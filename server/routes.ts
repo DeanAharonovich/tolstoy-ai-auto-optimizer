@@ -6,11 +6,196 @@ import { z } from "zod";
 import { subHours, subDays, subWeeks, subMonths } from "date-fns";
 import { DEMO_TEST, generateMockAnalytics } from "./mockData";
 import OpenAI from "openai";
+import type { Test, TestWithVariants, Variant, AnalyticsPoint } from "@shared/schema";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
+
+// === AUTONOMOUS OPTIMIZATION ENGINE ===
+
+interface VariantPerformance {
+  variantId: number;
+  name: string;
+  views: number;
+  conversions: number;
+  conversionRate: number;
+  status: string;
+}
+
+// Calculate statistical significance using two-tailed z-test
+function calculateStatisticalSignificance(
+  conversions1: number, views1: number,
+  conversions2: number, views2: number
+): { significant: boolean; confidence: number; pValue: number } {
+  if (views1 === 0 || views2 === 0) {
+    return { significant: false, confidence: 0, pValue: 1 };
+  }
+  
+  const p1 = conversions1 / views1;
+  const p2 = conversions2 / views2;
+  const pPooled = (conversions1 + conversions2) / (views1 + views2);
+  
+  const se = Math.sqrt(pPooled * (1 - pPooled) * (1/views1 + 1/views2));
+  if (se === 0) return { significant: false, confidence: 0, pValue: 1 };
+  
+  const z = Math.abs(p1 - p2) / se;
+  
+  // Approximate two-tailed p-value using Abramowitz and Stegun approximation for normal CDF
+  function normalCDF(x: number): number {
+    const a1 =  0.254829592;
+    const a2 = -0.284496736;
+    const a3 =  1.421413741;
+    const a4 = -1.453152027;
+    const a5 =  1.061405429;
+    const p  =  0.3275911;
+    const sign = x < 0 ? -1 : 1;
+    x = Math.abs(x) / Math.sqrt(2);
+    const t = 1.0 / (1.0 + p * x);
+    const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+    return 0.5 * (1.0 + sign * y);
+  }
+  
+  const pValue = 2 * (1 - normalCDF(z));
+  const confidence = Math.min(99.9, Math.max(0, (1 - pValue) * 100));
+  
+  return {
+    significant: pValue < 0.05,
+    confidence: parseFloat(confidence.toFixed(1)),
+    pValue: parseFloat(pValue.toFixed(4))
+  };
+}
+
+// Autonomous evaluation function - runs when analytics are updated
+async function evaluateTestPerformance(testId: number): Promise<void> {
+  const test = await storage.getTest(testId);
+  if (!test) return;
+  
+  // Skip if autonomous optimization is disabled or test is not running
+  if (!test.autonomousOptimization || test.status !== 'running') {
+    return;
+  }
+  
+  // Get current analytics
+  const analyticsData = await storage.getAnalytics(testId, '1m');
+  
+  // Calculate performance for each variant
+  const variantPerformance: VariantPerformance[] = test.variants.map(variant => {
+    const variantData = analyticsData.filter(a => a.variantId === variant.id);
+    const latestData = variantData[variantData.length - 1];
+    const views = latestData?.views || 0;
+    const conversions = latestData?.conversions || 0;
+    const conversionRate = views > 0 ? (conversions / views) * 100 : 0;
+    
+    return {
+      variantId: variant.id,
+      name: variant.name,
+      views,
+      conversions,
+      conversionRate,
+      status: variant.variantStatus,
+    };
+  });
+  
+  // Only evaluate active variants
+  const activeVariants = variantPerformance.filter(v => v.status === 'active');
+  
+  // Need at least 2 active variants for comparison
+  if (activeVariants.length < 2) {
+    return; // Not enough variants to compare
+  }
+  
+  // Check minimum sample size for all active variants
+  const hasMinSample = activeVariants.every(v => v.views >= test.minSampleSize);
+  if (!hasMinSample) {
+    return; // Not enough data yet
+  }
+  
+  // Calculate average conversion rate across active variants
+  const totalRate = activeVariants.reduce((sum, v) => sum + v.conversionRate, 0);
+  const avgConversionRate = totalRate / activeVariants.length;
+  
+  // Guard: Skip if average is zero or negligible (prevents division by zero)
+  if (avgConversionRate <= 0.001) {
+    return; // No meaningful conversion data yet
+  }
+  
+  // Find the control (first variant) and best performer
+  const control = variantPerformance[0];
+  const bestPerformer = activeVariants.reduce((best, curr) => 
+    curr.conversionRate > best.conversionRate ? curr : best
+  );
+  
+  // Guard: Skip if control has no conversions (can't calculate meaningful uplift)
+  if (control.conversionRate <= 0.001) {
+    return; // Control has no conversions yet
+  }
+  
+  // === ACTION A: KILL SWITCH ===
+  // Disable variants that are significantly underperforming
+  for (const variant of activeVariants) {
+    if (variant.variantId === control.variantId) continue; // Don't disable control
+    
+    const underperformancePercent = ((avgConversionRate - variant.conversionRate) / avgConversionRate) * 100;
+    
+    if (underperformancePercent >= test.killSwitchThreshold) {
+      // This variant is underperforming - disable it
+      const reason = `Disabled due to ${underperformancePercent.toFixed(1)}% underperformance vs average (threshold: ${test.killSwitchThreshold}%)`;
+      
+      await storage.updateVariantStatus(variant.variantId, 'disabled', reason);
+      
+      await storage.createActivityLogEntry({
+        testId,
+        variantId: variant.variantId,
+        action: 'disabled_variant',
+        message: `AI disabled ${variant.name} due to ${underperformancePercent.toFixed(1)}% drop in conversion rate below average.`,
+        metadata: {
+          variantConversionRate: variant.conversionRate,
+          averageConversionRate: avgConversionRate,
+          threshold: test.killSwitchThreshold,
+          underperformance: underperformancePercent,
+        },
+        timestamp: new Date(),
+      });
+    }
+  }
+  
+  // === ACTION B: FAST TRACK TO WINNER ===
+  // Promote winner if one variant significantly outperforms control
+  if (control.variantId !== bestPerformer.variantId) {
+    const uplift = ((bestPerformer.conversionRate - control.conversionRate) / control.conversionRate) * 100;
+    
+    // Check if uplift exceeds threshold AND is statistically significant
+    const significance = calculateStatisticalSignificance(
+      control.conversions, control.views,
+      bestPerformer.conversions, bestPerformer.views
+    );
+    
+    if (uplift >= test.autoWinThreshold && significance.significant) {
+      // Promote winner and complete the test
+      const reason = `System promoted as winner with ${uplift.toFixed(1)}% uplift vs control (${significance.confidence}% confidence)`;
+      
+      await storage.updateVariantStatus(bestPerformer.variantId, 'winner', reason);
+      await storage.updateTestWinner(testId, bestPerformer.variantId);
+      
+      await storage.createActivityLogEntry({
+        testId,
+        variantId: bestPerformer.variantId,
+        action: 'promoted_winner',
+        message: `AI promoted ${bestPerformer.name} as the winner with ${uplift.toFixed(1)}% conversion uplift and ${significance.confidence}% statistical confidence.`,
+        metadata: {
+          winnerConversionRate: bestPerformer.conversionRate,
+          controlConversionRate: control.conversionRate,
+          uplift,
+          confidence: significance.confidence,
+          threshold: test.autoWinThreshold,
+        },
+        timestamp: new Date(),
+      });
+    }
+  }
+}
 
 async function seedDatabase() {
   const existingTests = await storage.getAllTests();
@@ -300,6 +485,84 @@ Return ONLY valid JSON, no markdown code blocks.`;
       console.error("AI Analysis failed:", error);
       res.status(500).json({ message: "Failed to generate analysis" });
     }
+  });
+
+  // === SELF-CORRECTION LOOP ENDPOINTS ===
+  
+  // Get AI activity log for a test
+  app.get("/api/tests/:id/activity-log", async (req, res) => {
+    const testId = Number(req.params.id);
+    const log = await storage.getActivityLog(testId);
+    res.json(log);
+  });
+  
+  // Manually trigger autonomous evaluation
+  app.post("/api/tests/:id/evaluate", async (req, res) => {
+    const testId = Number(req.params.id);
+    const test = await storage.getTest(testId);
+    
+    if (!test) {
+      return res.status(404).json({ message: "Test not found" });
+    }
+    
+    if (test.status !== 'running') {
+      return res.status(400).json({ message: "Test must be running to evaluate" });
+    }
+    
+    try {
+      await evaluateTestPerformance(testId);
+      
+      // Log the evaluation
+      await storage.createActivityLogEntry({
+        testId,
+        variantId: null,
+        action: 'evaluation',
+        message: 'Manual evaluation triggered by user.',
+        metadata: { triggeredBy: 'user' },
+        timestamp: new Date(),
+      });
+      
+      // Refetch and return updated test
+      const updatedTest = await storage.getTest(testId);
+      res.json(updatedTest);
+    } catch (error) {
+      console.error("Evaluation failed:", error);
+      res.status(500).json({ message: "Failed to evaluate test" });
+    }
+  });
+  
+  // Update automation settings for a test
+  app.patch("/api/tests/:id/automation", async (req, res) => {
+    const testId = Number(req.params.id);
+    const { autonomousOptimization, minSampleSize, killSwitchThreshold, autoWinThreshold } = req.body;
+    
+    const test = await storage.getTest(testId);
+    if (!test) {
+      return res.status(404).json({ message: "Test not found" });
+    }
+    
+    const updated = await storage.updateTest(testId, {
+      autonomousOptimization,
+      minSampleSize,
+      killSwitchThreshold,
+      autoWinThreshold,
+    });
+    
+    // Log the settings change
+    if (autonomousOptimization !== undefined) {
+      await storage.createActivityLogEntry({
+        testId,
+        variantId: null,
+        action: 'evaluation',
+        message: autonomousOptimization 
+          ? `Autonomous Optimization enabled with thresholds: Kill at ${killSwitchThreshold || test.killSwitchThreshold}%, Win at ${autoWinThreshold || test.autoWinThreshold}%`
+          : 'Autonomous Optimization disabled.',
+        metadata: { autonomousOptimization, minSampleSize, killSwitchThreshold, autoWinThreshold },
+        timestamp: new Date(),
+      });
+    }
+    
+    res.json(updated);
   });
 
   return httpServer;

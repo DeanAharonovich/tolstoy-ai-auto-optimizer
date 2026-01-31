@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useRoute, Link } from "wouter";
-import { useTest, useTestAnalytics, useAnalyzeTest, useApplyWinner } from "@/hooks/use-tests";
-import { ArrowLeft, Clock, Users, PlayCircle, BarChart2, Lightbulb, Loader2, Share2, RefreshCw, Trophy, CheckCircle2, Play, Square, Edit2, ImageOff, VideoOff, Sparkles, TrendingUp, Target, ArrowUpRight, ChevronRight } from "lucide-react";
+import { useTest, useTestAnalytics, useAnalyzeTest, useApplyWinner, useActivityLog, useEvaluateTest } from "@/hooks/use-tests";
+import { ArrowLeft, Clock, Users, PlayCircle, BarChart2, Lightbulb, Loader2, Share2, RefreshCw, Trophy, CheckCircle2, Play, Square, Edit2, ImageOff, VideoOff, Sparkles, TrendingUp, Target, ArrowUpRight, ChevronRight, Zap, Shield, Activity, Bot, XCircle, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -36,6 +36,8 @@ export default function TestDetail() {
   const { data: analytics, isLoading: isAnalyticsLoading, refetch: refetchAnalytics } = useTestAnalytics(id, timeRange);
   const { mutate: analyze, isPending: isAnalyzing, data: analysis } = useAnalyzeTest();
   const { mutate: applyWinner, isPending: isApplyingWinner } = useApplyWinner();
+  const { data: activityLog, refetch: refetchActivityLog } = useActivityLog(id);
+  const { mutate: evaluateTest, isPending: isEvaluating } = useEvaluateTest();
   const { toast } = useToast();
   const [selectedWinner, setSelectedWinner] = useState<number | null>(null);
   const [previewVideo, setPreviewVideo] = useState<string | null>(null);
@@ -46,6 +48,20 @@ export default function TestDetail() {
   const handleRefresh = () => {
     refetchTest();
     refetchAnalytics();
+    refetchActivityLog();
+  };
+  
+  const handleEvaluate = () => {
+    evaluateTest(id, {
+      onSuccess: () => {
+        toast({ title: "Evaluation Complete", description: "AI has analyzed the test performance." });
+        refetchTest();
+        refetchActivityLog();
+      },
+      onError: (error) => {
+        toast({ title: "Evaluation Failed", description: error.message, variant: "destructive" });
+      }
+    });
   };
 
   const handleStartTest = async () => {
@@ -105,7 +121,7 @@ export default function TestDetail() {
             <ArrowLeft className="w-4 h-4 mr-1" /> Back to Dashboard
           </Link>
           <h1 className="text-3xl font-display font-bold text-slate-900">{test.name}</h1>
-          <div className="flex items-center gap-4 text-sm text-slate-500">
+          <div className="flex flex-wrap items-center gap-4 text-sm text-slate-500">
             <span className="flex items-center">
               <span className={cn(
                 "w-2 h-2 rounded-full mr-2",
@@ -114,6 +130,12 @@ export default function TestDetail() {
               )} />
               {test.status === 'draft' ? "Not Started" : test.status.charAt(0).toUpperCase() + test.status.slice(1).replace('_', ' ')}
             </span>
+            {test.autonomousOptimization && (
+              <span className="flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-medium" data-testid="badge-autonomous-guardrails">
+                <Zap className="w-3 h-3" />
+                Autonomous Guardrails
+              </span>
+            )}
             <span className="flex items-center">
               <Clock className="w-4 h-4 mr-1.5" />
               {Math.ceil((new Date(test.endTime).getTime() - new Date(test.startTime).getTime()) / (1000 * 60 * 60 * 24))} days duration
@@ -138,6 +160,18 @@ export default function TestDetail() {
            <Button variant="outline" size="sm" onClick={handleRefresh}>
              <RefreshCw className="w-4 h-4 mr-2" /> Refresh Data
            </Button>
+           {test.status === 'running' && test.autonomousOptimization && (
+             <Button 
+               variant="outline" 
+               size="sm" 
+               onClick={handleEvaluate} 
+               disabled={isEvaluating}
+               data-testid="button-evaluate-now"
+             >
+               {isEvaluating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Bot className="w-4 h-4 mr-2" />}
+               Evaluate Now
+             </Button>
+           )}
            <Button 
              variant={test.status === 'draft' ? "default" : "outline"} 
              size="sm" 
@@ -164,13 +198,37 @@ export default function TestDetail() {
               className={cn(
                 "group relative bg-white rounded-2xl border overflow-hidden shadow-sm hover:shadow-md transition-all",
                 isWinner ? "border-emerald-500 ring-2 ring-emerald-500/20" : 
-                isSelected ? "border-indigo-500 ring-2 ring-indigo-500/20" : "border-slate-100"
+                isSelected ? "border-indigo-500 ring-2 ring-indigo-500/20" : 
+                variant.variantStatus === 'disabled' ? "border-red-300 opacity-60" : "border-slate-100"
               )}
+              data-testid={`card-variant-${variant.id}`}
             >
+              {/* Winner Badge */}
               {isWinner && (
-                <div className="absolute top-3 right-3 z-10 flex items-center gap-1 bg-emerald-500 text-white px-2 py-1 rounded-full text-xs font-medium">
-                  <Trophy className="w-3 h-3" />
-                  Winner
+                <div className="absolute top-3 right-3 z-10 flex flex-col gap-1 items-end">
+                  <div className="flex items-center gap-1 bg-emerald-500 text-white px-2 py-1 rounded-full text-xs font-medium" data-testid={`badge-winner-${variant.id}`}>
+                    <Trophy className="w-3 h-3" />
+                    Winner
+                  </div>
+                  {variant.variantStatus === 'winner' && variant.statusReason && (
+                    <div className="flex items-center gap-1 bg-amber-500 text-white px-2 py-0.5 rounded-full text-[10px] font-medium" data-testid={`badge-system-promoted-${variant.id}`}>
+                      <Bot className="w-2.5 h-2.5" />
+                      System Promoted
+                    </div>
+                  )}
+                </div>
+              )}
+              {/* Disabled Badge */}
+              {variant.variantStatus === 'disabled' && (
+                <div className="absolute top-3 right-3 z-10 flex flex-col gap-1 items-end">
+                  <div className="flex items-center gap-1 bg-red-500 text-white px-2 py-1 rounded-full text-xs font-medium" data-testid={`badge-disabled-${variant.id}`}>
+                    <XCircle className="w-3 h-3" />
+                    Disabled
+                  </div>
+                  <div className="flex items-center gap-1 bg-amber-500 text-white px-2 py-0.5 rounded-full text-[10px] font-medium">
+                    <Bot className="w-2.5 h-2.5" />
+                    AI Kill Switch
+                  </div>
                 </div>
               )}
               <div className="aspect-video bg-slate-100 relative overflow-hidden">
@@ -465,6 +523,68 @@ export default function TestDetail() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* AI Activity Log Section */}
+      {test.status !== 'draft' && test.autonomousOptimization && (
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-4" data-testid="section-activity-log">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600">
+              <Activity className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-lg font-display font-semibold text-slate-900 flex items-center gap-2">
+                AI Activity Log
+                {activityLog && activityLog.length > 0 && (
+                  <span className="text-xs px-2 py-0.5 bg-indigo-100 text-indigo-600 rounded-full">
+                    {activityLog.length} events
+                  </span>
+                )}
+              </h3>
+              <p className="text-sm text-slate-500">Autonomous actions taken by the AI optimization engine</p>
+            </div>
+          </div>
+          
+          {(!activityLog || activityLog.length === 0) ? (
+            <div className="text-center py-8 text-slate-400" data-testid="activity-log-empty">
+              <Bot className="w-10 h-10 mx-auto mb-3 opacity-40" />
+              <p className="text-sm">No autonomous actions taken yet</p>
+              <p className="text-xs mt-1">The AI will log actions here when it disables variants or promotes winners</p>
+            </div>
+          ) : (
+            <div className="space-y-3 max-h-80 overflow-y-auto">
+              {activityLog.map((entry) => (
+                <div 
+                  key={entry.id} 
+                  className={cn(
+                    "flex items-start gap-3 p-3 rounded-lg border",
+                    entry.action === 'disabled_variant' ? "bg-red-50 border-red-200" :
+                    entry.action === 'promoted_winner' ? "bg-emerald-50 border-emerald-200" :
+                    "bg-slate-50 border-slate-200"
+                  )}
+                  data-testid={`activity-log-entry-${entry.id}`}
+                >
+                  <div className={cn(
+                    "p-1.5 rounded-lg mt-0.5",
+                    entry.action === 'disabled_variant' ? "bg-red-100 text-red-600" :
+                    entry.action === 'promoted_winner' ? "bg-emerald-100 text-emerald-600" :
+                    "bg-indigo-100 text-indigo-600"
+                  )}>
+                    {entry.action === 'disabled_variant' ? <Shield className="w-4 h-4" /> :
+                     entry.action === 'promoted_winner' ? <Trophy className="w-4 h-4" /> :
+                     <Bot className="w-4 h-4" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-slate-700">{entry.message}</p>
+                    <p className="text-xs text-slate-400 mt-1">
+                      {format(new Date(entry.timestamp), 'PPp')}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

@@ -1,9 +1,9 @@
 import { db } from "./db";
 import {
-  tests, variants, analytics,
-  type Test, type Variant, type AnalyticsPoint, type CreateTestRequest, type TestWithVariants
+  tests, variants, analytics, aiActivityLog,
+  type Test, type Variant, type AnalyticsPoint, type CreateTestRequest, type TestWithVariants, type AiActivityLogEntry
 } from "@shared/schema";
-import { eq, and, asc, gte, sql } from "drizzle-orm";
+import { eq, and, asc, gte, desc, sql } from "drizzle-orm";
 
 export type TimeRange = '1h' | '1d' | '1w' | '1m';
 
@@ -27,6 +27,13 @@ export interface IStorage {
     activeTests: number;
     totalReach: number;
   }>;
+  
+  // AI Activity Log
+  getActivityLog(testId: number): Promise<AiActivityLogEntry[]>;
+  createActivityLogEntry(entry: Omit<AiActivityLogEntry, "id">): Promise<AiActivityLogEntry>;
+  
+  // Variant Status
+  updateVariantStatus(variantId: number, status: string, reason: string | null): Promise<Variant | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -58,6 +65,11 @@ export class DatabaseStorage implements IStorage {
       conversionUplift: (req as any).conversionUplift || null,
       incomeUplift: (req as any).incomeUplift || null,
       isMock: (req as any).isMock || false,
+      // Autonomous optimization settings
+      autonomousOptimization: (req as any).autonomousOptimization ?? false,
+      minSampleSize: (req as any).minSampleSize ?? 100,
+      killSwitchThreshold: (req as any).killSwitchThreshold ?? 30,
+      autoWinThreshold: (req as any).autoWinThreshold ?? 50,
     }).returning();
 
     const createdVariants = [];
@@ -220,14 +232,30 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateTest(testId: number, req: any): Promise<TestWithVariants | undefined> {
+    const updateData: any = {
+      name: req.name,
+      productName: req.productName,
+      targetPopulation: req.targetPopulation,
+      startTime: req.startTime ? new Date(req.startTime) : undefined,
+      endTime: req.endTime ? new Date(req.endTime) : undefined,
+    };
+    
+    // Include autonomous optimization settings if provided
+    if (req.autonomousOptimization !== undefined) {
+      updateData.autonomousOptimization = req.autonomousOptimization;
+    }
+    if (req.minSampleSize !== undefined) {
+      updateData.minSampleSize = req.minSampleSize;
+    }
+    if (req.killSwitchThreshold !== undefined) {
+      updateData.killSwitchThreshold = req.killSwitchThreshold;
+    }
+    if (req.autoWinThreshold !== undefined) {
+      updateData.autoWinThreshold = req.autoWinThreshold;
+    }
+    
     const [test] = await db.update(tests)
-      .set({
-        name: req.name,
-        productName: req.productName,
-        targetPopulation: req.targetPopulation,
-        startTime: req.startTime ? new Date(req.startTime) : undefined,
-        endTime: req.endTime ? new Date(req.endTime) : undefined,
-      })
+      .set(updateData)
       .where(eq(tests.id, testId))
       .returning();
     
@@ -245,6 +273,33 @@ export class DatabaseStorage implements IStorage {
 
     const testVariants = await db.select().from(variants).where(eq(variants.testId, testId));
     return { ...test, variants: testVariants };
+  }
+  
+  // AI Activity Log
+  async getActivityLog(testId: number): Promise<AiActivityLogEntry[]> {
+    return await db.select()
+      .from(aiActivityLog)
+      .where(eq(aiActivityLog.testId, testId))
+      .orderBy(desc(aiActivityLog.timestamp));
+  }
+  
+  async createActivityLogEntry(entry: Omit<AiActivityLogEntry, "id">): Promise<AiActivityLogEntry> {
+    const [created] = await db.insert(aiActivityLog)
+      .values(entry)
+      .returning();
+    return created;
+  }
+  
+  // Variant Status
+  async updateVariantStatus(variantId: number, status: string, reason: string | null): Promise<Variant | undefined> {
+    const [updated] = await db.update(variants)
+      .set({
+        variantStatus: status,
+        statusReason: reason,
+      })
+      .where(eq(variants.id, variantId))
+      .returning();
+    return updated;
   }
 }
 

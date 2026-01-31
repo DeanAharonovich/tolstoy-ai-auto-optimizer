@@ -127,3 +127,78 @@ export function useAggregateMetrics() {
     },
   });
 }
+
+// Fetch AI activity log for a test
+export function useActivityLog(testId: number) {
+  return useQuery({
+    queryKey: ['/api/tests', testId, 'activity-log'],
+    queryFn: async () => {
+      const res = await fetch(`/api/tests/${testId}/activity-log`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch activity log");
+      return res.json() as Promise<Array<{
+        id: number;
+        testId: number;
+        variantId: number | null;
+        action: string;
+        message: string;
+        metadata: Record<string, any> | null;
+        timestamp: string;
+      }>>;
+    },
+    enabled: !!testId && !isNaN(testId),
+  });
+}
+
+// Trigger autonomous evaluation
+export function useEvaluateTest() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (testId: number) => {
+      const res = await fetch(`/api/tests/${testId}/evaluate`, {
+        method: 'POST',
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || "Failed to evaluate test");
+      }
+      return res.json();
+    },
+    onSuccess: (_, testId) => {
+      queryClient.invalidateQueries({ queryKey: [api.tests.get.path, testId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/tests', testId, 'activity-log'] });
+    },
+  });
+}
+
+// Update automation settings
+export function useUpdateAutomation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ testId, settings }: { 
+      testId: number; 
+      settings: {
+        autonomousOptimization?: boolean;
+        minSampleSize?: number;
+        killSwitchThreshold?: number;
+        autoWinThreshold?: number;
+      }
+    }) => {
+      const res = await fetch(`/api/tests/${testId}/automation`, {
+        method: 'PATCH',
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(settings),
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || "Failed to update automation settings");
+      }
+      return res.json();
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: [api.tests.get.path, variables.testId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/tests', variables.testId, 'activity-log'] });
+    },
+  });
+}

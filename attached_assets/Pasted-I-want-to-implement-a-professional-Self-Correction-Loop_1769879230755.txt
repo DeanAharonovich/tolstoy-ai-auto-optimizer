@@ -1,0 +1,39 @@
+I want to implement a professional Self-Correction Loop for the A/B testing system. This feature should protect brand revenue by automatically disabling poor-performing variants and promoting winners based on real-time data, but it must be fully configurable by the user.
+
+1. User Configuration (Rules Engine):
+
+Add an 'Automation & Guardrails' settings section to the Test creation/edit flow.
+
+Users must be able to toggle "Autonomous Optimization" ON or OFF.
+
+If ON, users can define the following rules:
+
+Minimum Sample Size: Minimum views required before the AI makes any decision (e.g., 100 views).
+
+Kill Switch Threshold: % of underperformance relative to the average that triggers a variant to be disabled (e.g., "Disable variant if 30% below average").
+
+Auto-Win Threshold: % of uplift required to automatically declare a winner and end the test (e.g., "Promote to winner if 50% uplift is detected").
+
+2. Autonomous Logic:
+
+The system should evaluate test performance every time new analytics data is received.
+
+The logic must respect the user-defined rules stored in the database.
+
+Action A (The Kill Switch): If a variant hits the negative threshold, the system should automatically change its status to 'Disabled'.
+
+Action B (The Fast Track): If a variant hits the positive threshold with statistical significance, the system should automatically set it as the 'Winner' and update the test status to 'Completed'.
+
+3. Transparency & UI Feedback:
+
+Every autonomous action taken by the system must be logged. Add an 'AI Activity Log' to the test details page showing events like: "AI disabled Variant A due to 35% drop in conversion."
+
+Visual indicators (badges/icons) should show if a test is currently being managed by "Autonomous Guardrails".
+
+If a winner was chosen automatically, display a "System Promoted" badge on that variant.
+
+4. Data Integrity:
+
+Ensure all these settings and actions are saved in the database.
+
+The logic should differentiate between 'Mock' data and 'Real' data, but apply the rules consistently to both to ensure the demo is functional.

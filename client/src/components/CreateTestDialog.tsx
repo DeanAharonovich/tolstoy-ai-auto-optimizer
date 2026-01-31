@@ -6,7 +6,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, Trash2, Video, Loader2, Upload, Image, CheckCircle } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Plus, Trash2, Video, Loader2, Upload, Image, CheckCircle, Zap, Shield, Target } from "lucide-react";
 import { useCreateTest } from "@/hooks/use-tests";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
@@ -25,6 +26,11 @@ const formSchema = z.object({
     thumbnailUrl: z.string().min(1, "Thumbnail is required"),
     description: z.string().optional(),
   })).min(2, "At least 2 variants are required").max(3, "Maximum 3 variants allowed"),
+  // Autonomous Optimization Settings
+  autonomousOptimization: z.boolean().default(false),
+  minSampleSize: z.coerce.number().min(10, "Minimum 10 views").default(100),
+  killSwitchThreshold: z.coerce.number().min(5).max(100).default(30),
+  autoWinThreshold: z.coerce.number().min(10).max(200).default(50),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -57,8 +63,14 @@ export function CreateTestDialog({ open, onOpenChange, initialData, isEditing }:
         { name: "Variant A", videoUrl: "", thumbnailUrl: "", description: "" },
         { name: "Variant B", videoUrl: "", thumbnailUrl: "", description: "" },
       ],
+      autonomousOptimization: false,
+      minSampleSize: 100,
+      killSwitchThreshold: 30,
+      autoWinThreshold: 50,
     },
   });
+  
+  const autonomousOptimization = watch("autonomousOptimization");
 
   useEffect(() => {
     if (initialData) {
@@ -74,6 +86,10 @@ export function CreateTestDialog({ open, onOpenChange, initialData, isEditing }:
           thumbnailUrl: v.thumbnailUrl,
           description: v.description || "",
         })),
+        autonomousOptimization: initialData.autonomousOptimization ?? false,
+        minSampleSize: initialData.minSampleSize ?? 100,
+        killSwitchThreshold: initialData.killSwitchThreshold ?? 30,
+        autoWinThreshold: initialData.autoWinThreshold ?? 50,
       });
     }
   }, [initialData, reset]);
@@ -247,6 +263,83 @@ export function CreateTestDialog({ open, onOpenChange, initialData, isEditing }:
                 </div>
               </div>
             ))}
+          </div>
+
+          {/* Automation & Guardrails Section */}
+          <div className="space-y-4 pt-4 border-t border-slate-200">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-gradient-to-br from-amber-400 to-orange-500 rounded-lg">
+                  <Zap className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <Label className="text-base font-medium">Autonomous Optimization</Label>
+                  <p className="text-xs text-slate-500">AI-powered guardrails to protect brand revenue</p>
+                </div>
+              </div>
+              <Switch
+                checked={autonomousOptimization}
+                onCheckedChange={(checked) => setValue("autonomousOptimization", checked)}
+                disabled={disabled}
+                data-testid="switch-autonomous-optimization"
+              />
+            </div>
+            
+            {autonomousOptimization && (
+              <div className="space-y-4 pl-8 pt-2 animate-in fade-in-0 slide-in-from-top-2 duration-200">
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-xs text-slate-500 flex items-center gap-1">
+                      <Target className="w-3 h-3" />
+                      Min. Sample Size
+                    </Label>
+                    <Input 
+                      type="number" 
+                      {...register("minSampleSize")} 
+                      disabled={disabled}
+                      data-testid="input-min-sample-size"
+                    />
+                    <p className="text-[10px] text-slate-400">Views before AI acts</p>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label className="text-xs text-slate-500 flex items-center gap-1">
+                      <Shield className="w-3 h-3 text-red-500" />
+                      Kill Switch (%)
+                    </Label>
+                    <Input 
+                      type="number" 
+                      {...register("killSwitchThreshold")} 
+                      disabled={disabled}
+                      data-testid="input-kill-switch-threshold"
+                    />
+                    <p className="text-[10px] text-slate-400">Disable if below avg</p>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label className="text-xs text-slate-500 flex items-center gap-1">
+                      <Zap className="w-3 h-3 text-emerald-500" />
+                      Auto-Win (%)
+                    </Label>
+                    <Input 
+                      type="number" 
+                      {...register("autoWinThreshold")} 
+                      disabled={disabled}
+                      data-testid="input-auto-win-threshold"
+                    />
+                    <p className="text-[10px] text-slate-400">Promote if uplift exceeds</p>
+                  </div>
+                </div>
+                
+                <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
+                  <p className="font-medium mb-1">How it works:</p>
+                  <ul className="text-xs space-y-1 text-amber-700">
+                    <li>• <strong>Kill Switch:</strong> Variants performing {watch("killSwitchThreshold") || 30}% below average will be automatically disabled</li>
+                    <li>• <strong>Auto-Win:</strong> Variants with {watch("autoWinThreshold") || 50}% uplift (statistically significant) will be promoted as winner</li>
+                  </ul>
+                </div>
+              </div>
+            )}
           </div>
 
           <DialogFooter>

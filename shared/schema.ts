@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, jsonb, real } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -20,6 +20,11 @@ export const tests = pgTable("tests", {
   incomeUplift: text("income_uplift"), // e.g. "+$2,450"
   winnerVariantId: integer("winner_variant_id"), // ID of the selected winning variant
   isMock: boolean("is_mock").notNull().default(false), // Indicates demo/mock data for presentation
+  // Autonomous Optimization Settings
+  autonomousOptimization: boolean("autonomous_optimization").notNull().default(false),
+  minSampleSize: integer("min_sample_size").notNull().default(100), // Minimum views before AI acts
+  killSwitchThreshold: real("kill_switch_threshold").notNull().default(30), // % below average to disable
+  autoWinThreshold: real("auto_win_threshold").notNull().default(50), // % uplift to declare winner
 });
 
 export const variants = pgTable("variants", {
@@ -29,6 +34,20 @@ export const variants = pgTable("variants", {
   videoUrl: text("video_url").notNull(),
   thumbnailUrl: text("thumbnail_url").notNull(),
   description: text("description"),
+  // Autonomous optimization fields
+  variantStatus: text("variant_status").notNull().default("active"), // 'active' | 'disabled' | 'winner'
+  statusReason: text("status_reason"), // Reason for status change (AI explanation)
+});
+
+// AI Activity Log - tracks autonomous actions
+export const aiActivityLog = pgTable("ai_activity_log", {
+  id: serial("id").primaryKey(),
+  testId: integer("test_id").notNull(),
+  variantId: integer("variant_id"),
+  action: text("action").notNull(), // 'disabled_variant' | 'promoted_winner' | 'evaluation'
+  message: text("message").notNull(), // Human-readable description
+  metadata: jsonb("metadata"), // Additional data (performance metrics, thresholds, etc.)
+  timestamp: timestamp("timestamp").notNull().defaultNow(),
 });
 
 // Granular analytics data for charts
@@ -61,20 +80,34 @@ export const analyticsRelations = relations(analytics, ({ one }) => ({
   }),
 }));
 
+export const aiActivityLogRelations = relations(aiActivityLog, ({ one }) => ({
+  test: one(tests, {
+    fields: [aiActivityLog.testId],
+    references: [tests.id],
+  }),
+  variant: one(variants, {
+    fields: [aiActivityLog.variantId],
+    references: [variants.id],
+  }),
+}));
+
 export const testsRelations = relations(tests, ({ many }) => ({
   variants: many(variants),
   analytics: many(analytics),
+  activityLog: many(aiActivityLog),
 }));
 
 // === BASE SCHEMAS ===
 export const insertTestSchema = createInsertSchema(tests).omit({ id: true, startDate: true });
 export const insertVariantSchema = createInsertSchema(variants).omit({ id: true });
 export const insertAnalyticsSchema = createInsertSchema(analytics).omit({ id: true });
+export const insertAiActivityLogSchema = createInsertSchema(aiActivityLog).omit({ id: true });
 
 // === EXPLICIT API CONTRACT TYPES ===
 export type Test = typeof tests.$inferSelect;
 export type Variant = typeof variants.$inferSelect;
 export type AnalyticsPoint = typeof analytics.$inferSelect;
+export type AiActivityLogEntry = typeof aiActivityLog.$inferSelect;
 
 export type CreateTestRequest = z.infer<typeof insertTestSchema> & {
   variants: Omit<z.infer<typeof insertVariantSchema>, "testId">[];
